@@ -7,13 +7,22 @@ using namespace voxhash;
 using TsdfBlock = Block<TsdfVoxel>;
 using TsdfLayer = VoxelBlockLayer<TsdfBlock>;
 
+__global__ void addWeightKernel(const size_t num_voxels, TsdfVoxel **v)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_voxels)
+    {
+        v[idx]->weight += 1.0;
+    }
+}
+
 int main(int argc, char *argv[])
 {
     warmupCuda();
 
     BlockLayerParams p;
     p.block_size = 0.4; // m
-    p.memory_type = MemoryType::kHost;
+    p.memory_type = MemoryType::kDevice;
     p.min_allocated_blocks = 2;
     p.max_allocated_blocks = 5;
 
@@ -68,12 +77,6 @@ int main(int argc, char *argv[])
         voxels_to_store.emplace_back(1.0f, 20.0f);
         voxels_to_store.emplace_back(-1.5f, 30.0f);
 
-        // layer.allocateBlocks(block_indices);
-
-        // layer.getBlock(block_indices[0]).second->setVoxel(voxel_indices[0], voxels_to_store[0], stream);
-        // layer.getBlock(block_indices[1]).second->setVoxel(voxel_indices[1], voxels_to_store[1], stream);
-        // layer.getBlock(block_indices[2]).second->setVoxel(voxel_indices[2], voxels_to_store[2], stream);
-
         IndexPairs block_and_voxel_indices = {block_indices, voxel_indices};
 
         Vector<TsdfVoxel>::Ptr voxels_to_store_ = Vector<TsdfVoxel>::copyFrom(voxels_to_store, MemoryType::kHost, stream); // Doesn't matter where we store
@@ -107,22 +110,6 @@ int main(int argc, char *argv[])
         voxels_to_store.emplace_back(1.0f, 20.0f);
         voxels_to_store.emplace_back(-1.5f, 30.0f);
 
-        // std::vector<Index3D> block_indices;
-        // std::vector<Index3D> voxel_indices;
-        // for (size_t i = 0; i < positions.size(); i++)
-        // {
-        //     Index3D bl_idx(0, 0, 0), v_idx(0, 0, 0);
-        //     getBlockAndVoxelIndexFromPosition(layer.block_size(), positions[i], &bl_idx, &v_idx);
-        //     block_indices.push_back(bl_idx);
-        //     voxel_indices.push_back(v_idx);
-        // }
-
-        // layer.allocateBlocks(block_indices);
-
-        // layer.getBlock(block_indices[0]).second->setVoxel(voxel_indices[0], voxels_to_store[0], stream);
-        // // layer.getBlock(block_indices[1]).second->setVoxel(voxel_indices[1], voxels_to_store[1], stream);
-        // layer.getBlock(block_indices[2]).second->setVoxel(voxel_indices[2], voxels_to_store[2], stream);
-
         Vector<TsdfVoxel>::Ptr voxels_to_store_ = Vector<TsdfVoxel>::copyFrom(voxels_to_store, MemoryType::kHost, stream); // Doesn't matter where we store
         Vector<Bool> stored = layer.storeVoxels(positions, *voxels_to_store_, stream);
         Vector<Bool>::Ptr stored_host = Vector<Bool>::copyFrom(stored, MemoryType::kHost, stream);
@@ -133,13 +120,112 @@ int main(int argc, char *argv[])
             std::cout << (int)((*stored_host)[i]) << ",";
         std::cout << "\n";
 
-        // IndexPairs block_and_voxel_indices = {voxel_indices, block_indices};
         Vector<TsdfVoxel> voxels = layer.getVoxels(positions, stream);
         Vector<TsdfVoxel>::Ptr voxels_host = Vector<TsdfVoxel>::copyFrom(voxels, MemoryType::kHost, stream);
 
-        std::cout << "Voxels: \n";
+        std::cout << "Voxels by Positions: \n";
         for (size_t i = 0; i < voxels_host->size(); i++)
             std::cout << "(" << voxels_host->data()[i].tsdf << "," << voxels_host->data()[i].weight << ")\n";
     }
+
+    // ========
+    {
+        Index3D block_idx_to_retrieve(0, 0, 1), voxel_idx_to_retrieve(2, 0, 1);
+        TsdfVoxel *retrieved_voxel = layer.getVoxelPtr(block_idx_to_retrieve, voxel_idx_to_retrieve, stream);
+        TsdfVoxel voxel_on_host(0, 0);
+        checkCudaErrors(cudaMemcpyAsync(&voxel_on_host, retrieved_voxel, sizeof(TsdfVoxel), cudaMemcpyDefault, stream));
+        stream.synchronize();
+
+        std::cout << "Retrieved Voxel: (" << voxel_on_host.tsdf << "," << voxel_on_host.weight << ")\n";
+    }
+
+    // ========
+    {
+        Vector3f position_to_retrieve(10.0, 11.0, 12.0);
+        TsdfVoxel *retrieved_voxel = layer.getVoxelPtr(position_to_retrieve, stream);
+        TsdfVoxel voxel_on_host(0, 0);
+        checkCudaErrors(cudaMemcpyAsync(&voxel_on_host, retrieved_voxel, sizeof(TsdfVoxel), cudaMemcpyDefault, stream));
+        stream.synchronize();
+
+        std::cout << "Retrieved Voxel: (" << voxel_on_host.tsdf << "," << voxel_on_host.weight << ")\n";
+    }
+
+    // ========
+
+    {
+        std::vector<Index3D> block_indices;
+        std::vector<Index3D> voxel_indices;
+        block_indices.push_back(Index3D(0, 0, 1));
+        block_indices.push_back(Index3D(-1, 0, 0));
+        block_indices.push_back(Index3D(0, -1, 0));
+        voxel_indices.push_back(Index3D(2, 0, 1));
+        voxel_indices.push_back(Index3D(2, 1, 0));
+        voxel_indices.push_back(Index3D(2, 0, 0));
+
+        IndexPairs block_and_voxel_indices = {block_indices, voxel_indices};
+        Vector<TsdfVoxel *> retrieved_voxels = layer.getVoxelsPtr(block_and_voxel_indices, stream);
+        stream.synchronize();
+
+        // Update the retrieved voxels
+        if (p.memory_type == MemoryType::kHost)
+        {
+            for (size_t i = 0; i < retrieved_voxels.size(); i++)
+                retrieved_voxels[i]->weight += 1.0;
+        }
+        else
+        {
+            constexpr int kNumThreads = 512;
+            const int kNumBlocks = voxel_indices.size() / kNumThreads + 1;
+            addWeightKernel<<<kNumBlocks, kNumThreads, 0, stream>>>(retrieved_voxels.size(), retrieved_voxels.data());
+            stream.synchronize();
+            checkCudaErrors(cudaPeekAtLastError());
+        }
+
+        Vector<TsdfVoxel> voxels = layer.getVoxels(block_and_voxel_indices, stream);
+        Vector<TsdfVoxel>::Ptr voxels_host = Vector<TsdfVoxel>::copyFrom(voxels, MemoryType::kHost, stream);
+
+        stream.synchronize();
+
+        std::cout << "Added Voxels: \n";
+        for (size_t i = 0; i < voxels_host->size(); i++)
+            std::cout << "(" << voxels_host->data()[i].tsdf << "," << voxels_host->data()[i].weight << ")\n";
+    }
+
+    // ========
+
+    {
+        std::vector<Vector3f> positions;
+        positions.push_back(Vector3f(10.0, 11.0, 12.0));
+        positions.push_back(Vector3f(-10.0, 11.0, 12.0));
+        positions.push_back(Vector3f(10.0, -11.0, 12.0));
+
+        Vector<TsdfVoxel *> retrieved_voxels = layer.getVoxelsPtr(positions, stream);
+        stream.synchronize();
+
+        // Update the retrieved voxels
+        if (p.memory_type == MemoryType::kHost)
+        {
+            for (size_t i = 0; i < retrieved_voxels.size(); i++)
+                retrieved_voxels[i]->weight += 1.0;
+        }
+        else
+        {
+            constexpr int kNumThreads = 512;
+            const int kNumBlocks = positions.size() / kNumThreads + 1;
+            addWeightKernel<<<kNumBlocks, kNumThreads, 0, stream>>>(retrieved_voxels.size(), retrieved_voxels.data());
+            stream.synchronize();
+            checkCudaErrors(cudaPeekAtLastError());
+        }
+
+        Vector<TsdfVoxel> voxels = layer.getVoxels(positions, stream);
+        Vector<TsdfVoxel>::Ptr voxels_host = Vector<TsdfVoxel>::copyFrom(voxels, MemoryType::kHost, stream);
+
+        stream.synchronize();
+
+        std::cout << "Added Voxels by Position: \n";
+        for (size_t i = 0; i < voxels_host->size(); i++)
+            std::cout << "(" << voxels_host->data()[i].tsdf << "," << voxels_host->data()[i].weight << ")\n";
+    }
+
     return 0;
 }

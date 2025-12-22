@@ -43,7 +43,7 @@ namespace voxhash
     {
         if (ptr_ != nullptr)
         {
-            std::cout << "Freeing\n";
+            // std::cout << "Freeing\n";
             if (type_ == MemoryType::kHost)
             {
                 checkCudaErrors(cudaFreeHost(ptr_));
