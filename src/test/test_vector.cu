@@ -1,58 +1,88 @@
-
-#include <iostream>
-#include <string>
-
-#include "voxhash/core/cuda_utils.h"
-#include "voxhash/core/vector.h"
+#include <gtest/gtest.h>
+#include <voxhash/core/cuda_utils.h>
+#include <voxhash/core/vector.h>
 
 using namespace voxhash;
 
-int main(int argc, char* argv[]) {
-    warmupCuda();
-
+TEST(TestVector, Create) {
     size_t size = 100;
     MemoryType type = MemoryType::kDevice;
-    Vector<float> v(size, type);
-    float test_data = 100;
-    cudaMemcpy(v.data() + 1, &test_data, sizeof(float), cudaMemcpyDefault);
 
-    Vector<float>::Ptr v1 = Vector<float>::copyFrom(v, MemoryType::kHost);
+    EXPECT_NO_THROW({ Vector<float> v(size, type); });
+}
 
-    std::cout << "Data (" << v1->size() << "): ";
-    for (size_t i = 0; i < v1->size(); i++) {
-        std::cout << v1->data()[i] << ",";
-    }
-    std::cout << "\n";
+TEST(TestVector, DataSetAndCopy) {
+    EXPECT_NO_THROW({
+        size_t size = 100;
+        MemoryType type = MemoryType::kDevice;
 
-    std::cout << " Data at 1 before clearing: " << v1->data()[1] << "\n";
-    v1->clear();
-    std::cout << " Data at 1 after clearing: " << v1->data()[1] << "\n";
+        Vector<float> v(size, type);
+        float test_data = 100;
+        CUDA_CHECK(cudaMemcpy(v.data() + 1, &test_data, sizeof(float), cudaMemcpyDefault));
 
-    bool isSet = v1->setFrom(v);
-    if (!isSet)
-        std::cout << "Not Set\n";
-    else {
-        std::cout << "Data (" << v1->size() << "): ";
-        for (size_t i = 0; i < v1->size(); i++) {
-            std::cout << v1->data()[i] << ",";
+        Vector<float>::Ptr v1 = Vector<float>::copyFrom(v, MemoryType::kHost);
+
+        EXPECT_EQ(v1->data()[1], test_data);
+    });
+}
+
+TEST(TestVector, DataClear) {
+    EXPECT_NO_THROW({
+        size_t size = 100;
+        MemoryType type = MemoryType::kDevice;
+
+        Vector<float> v(size, type);
+        float test_data = 100;
+        CUDA_CHECK(cudaMemcpy(v.data() + 1, &test_data, sizeof(float), cudaMemcpyDefault));
+
+        Vector<float>::Ptr v1 = Vector<float>::copyFrom(v, MemoryType::kHost);
+
+        v1->clear();
+
+        EXPECT_NE(v1->data()[1], test_data);
+    });
+}
+
+TEST(TestVector, SetFrom) {
+    EXPECT_NO_THROW({
+        size_t size = 100;
+        MemoryType type = MemoryType::kDevice;
+
+        Vector<float> v(size, type);
+        float test_data = 100;
+        CUDA_CHECK(cudaMemcpy(v.data() + 1, &test_data, sizeof(float), cudaMemcpyDefault));
+
+        Vector<float>::Ptr v1 = Vector<float>::copyFrom(v, MemoryType::kHost);
+
+        v1->clear();
+        EXPECT_TRUE(v1->setFrom(v));
+        EXPECT_EQ(v1->data()[1], test_data);
+    });
+}
+
+TEST(TestVector, Release) {
+    EXPECT_NO_THROW({
+        size_t size = 100;
+        MemoryType type = MemoryType::kDevice;
+
+        Vector<float> v(size, type);
+        float* ptr = v.release();
+        EXPECT_FALSE(v.valid());
+        CUDA_CHECK(cudaFree(ptr));
+    });
+}
+
+TEST(TestVector, CopyFromVector) {
+    EXPECT_NO_THROW({
+        int num_queries = 10;
+        std::vector<int> vector_to_convert(num_queries);
+        for (size_t i = 0; i < num_queries; i++) {
+            vector_to_convert.push_back(i);
         }
-        std::cout << "\n";
-    }
 
-    float* ptr = v.release();
-    std::cout << "Valid: " << std::boolalpha << v.valid() << "\n";
-    cudaFree(ptr);
+        Vector<int>::Ptr v_device = Vector<int>::copyFrom(vector_to_convert, MemoryType::kDevice);
+        Vector<int>::Ptr v_host = Vector<int>::copyFrom(*v_device, MemoryType::kHost);
 
-    std::cout << "Created vector of size: " << size << " on " << to_string(type) << "\n";
-
-    std::vector<int> vector_to_convert;
-    for (int i = 0; i < 10; i++) vector_to_convert.push_back(i);
-    Vector<int>::Ptr vector_converted_device =
-            Vector<int>::copyFrom(vector_to_convert, MemoryType::kDevice);
-    Vector<int>::Ptr vector_converted =
-            Vector<int>::copyFrom(*vector_converted_device, MemoryType::kHost);
-
-    std::cout << "Vector: ";
-    for (int i = 0; i < 10; i++) std::cout << vector_converted->data()[i] << ", ";
-    std::cout << "\n";
+        for (size_t i = 0; i < num_queries; i++) EXPECT_EQ(vector_to_convert[i], (*v_host)[i]);
+    });
 }

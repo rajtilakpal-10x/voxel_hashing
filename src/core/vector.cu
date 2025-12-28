@@ -13,11 +13,11 @@ Vector<DataType>::Vector(size_t size, MemoryType type) : size_(size), type_(type
 template <typename DataType>
 void Vector<DataType>::allocateImpl(const CudaStream& cuda_stream) {
     if (type_ == MemoryType::kUnified) {
-        checkCudaErrors(cudaMallocManaged(&ptr_, sizeof(DataType) * size_, cudaMemAttachGlobal));
+        CUDA_CHECK(cudaMallocManaged(&ptr_, sizeof(DataType) * size_, cudaMemAttachGlobal));
     } else if (type_ == MemoryType::kDevice) {
-        checkCudaErrors(cudaMallocAsync(&ptr_, sizeof(DataType) * size_, cuda_stream));
+        CUDA_CHECK(cudaMallocAsync(&ptr_, sizeof(DataType) * size_, cuda_stream));
     } else {
-        checkCudaErrors(cudaMallocHost(&ptr_, sizeof(DataType) * size_));
+        CUDA_CHECK(cudaMallocHost(&ptr_, sizeof(DataType) * size_));
     }
 }
 
@@ -33,11 +33,11 @@ void Vector<DataType>::free(const CudaStream& cuda_stream) {
     if (ptr_ != nullptr) {
         // std::cout << "Freeing\n";
         if (type_ == MemoryType::kHost) {
-            checkCudaErrors(cudaFreeHost(ptr_));
+            CUDA_CHECK(cudaFreeHost(ptr_));
         } else if (type_ == MemoryType::kDevice) {
-            checkCudaErrors(cudaFreeAsync(ptr_, cuda_stream));
+            CUDA_CHECK(cudaFreeAsync(ptr_, cuda_stream));
         } else {
-            checkCudaErrors(cudaFree(ptr_));
+            CUDA_CHECK(cudaFree(ptr_));
         }
         ptr_ = nullptr;
         is_valid_ = false;
@@ -91,8 +91,7 @@ std::shared_ptr<Vector<DataType>> Vector<DataType>::copyFrom(
         const std::vector<DataType>& src, const MemoryType target_type, const CudaStream& stream) {
     Ptr dst = std::make_shared<Vector<DataType>>(src.size(), target_type);
 
-    // dst->copyFromImpl(src, stream);
-    checkCudaErrors(cudaMemcpyAsync(
+    CUDA_CHECK(cudaMemcpyAsync(
             dst->data(), src.data(), sizeof(DataType) * src.size(), cudaMemcpyDefault, stream));
     return dst;
 }
@@ -101,7 +100,7 @@ template <typename DataType>
 bool Vector<DataType>::setFrom(const Vector<DataType>& src, const CudaStream& cuda_stream) {
     if (src.size() != size_) return false;
 
-    checkCudaErrors(cudaMemcpyAsync(
+    CUDA_CHECK(cudaMemcpyAsync(
             this->ptr_, src.ptr_, sizeof(DataType) * size_, cudaMemcpyDefault, cuda_stream));
     return true;
 }
@@ -113,7 +112,7 @@ std::shared_ptr<Vector<DataType>> Vector<DataType>::createEmpty(MemoryType targe
 
 template <typename DataType>
 void Vector<DataType>::copyFromImpl(const Vector<DataType>& src, const CudaStream& stream) {
-    checkCudaErrors(
+    CUDA_CHECK(
             cudaMemcpyAsync(ptr_, src.ptr_, sizeof(DataType) * size_, cudaMemcpyDefault, stream));
 }
 
@@ -153,7 +152,7 @@ DataType& Vector<DataType>::operator[](size_t idx) const {
 
 template <typename DataType>
 void Vector<DataType>::clear(const CudaStream& cuda_stream) {
-    checkCudaErrors(cudaMemsetAsync(this->ptr_, 0, sizeof(DataType) * this->size_, cuda_stream));
+    CUDA_CHECK(cudaMemsetAsync(this->ptr_, 0, sizeof(DataType) * this->size_, cuda_stream));
 }
 
 template class Vector<int>;
