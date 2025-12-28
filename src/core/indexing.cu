@@ -39,8 +39,8 @@ std::pair<Vector<Index3D>, Vector<Index3D>> getBlockAndVoxelIndicesFromPositions
                 positions_L.data(),
                 block_indices.data(),
                 voxel_indices.data());
+        CUDA_CHECK(cudaGetLastError());
         cuda_stream.synchronize();
-        checkCudaErrors(cudaPeekAtLastError());
     }
 
     return std::make_pair(std::move(block_indices), std::move(voxel_indices));

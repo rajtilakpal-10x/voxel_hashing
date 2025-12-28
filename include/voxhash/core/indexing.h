@@ -84,5 +84,5 @@ std::pair<Vector<Index3D>, Vector<Index3D>> getBlockAndVoxelIndicesFromPositions
         const float block_size,
         const Vector<Vector3f>& positions_L,
         const CudaStream& cuda_stream = CudaStreamOwning());
-
+// TODO: Add other bulk methods as necessary
 }  // namespace voxhash
