@@ -22,7 +22,10 @@ void BlockMemoryPool<BlockType>::ensureCapacity() {
     if (current_size < min__) {
         int num_blocks_to_allocate = (int)max_allocated_blocks_ - current_size;
         for (size_t i = 0; i < num_blocks_to_allocate; i++) {
-            blocks_.push(std::make_shared<BlockType>(type_));
+            try {
+                blocks_.push(std::make_shared<BlockType>(type_));
+            } catch (const CudaError& e) {
+            }
         }
     }
 

@@ -1,3 +1,5 @@
+#include <gtest/gtest.h>
+
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -11,8 +13,7 @@ using namespace std::chrono;
 using namespace voxhash;
 using TsdfBlock = Block<TsdfVoxel>;
 
-int main(int argc, char* argv[]) {
-    warmupCuda();
+TEST(TestBlockPool, TestBlockPoolSizes) {
     MemoryType type = MemoryType::kDevice;
 
     size_t min_alloc = 2;
@@ -25,17 +26,14 @@ int main(int argc, char* argv[]) {
         BlockMemoryPool<TsdfBlock> pool(min_alloc, max_alloc, type);
 
         for (size_t i = 0; i < to_pull; i++) {
-            std::cout << "Pulling...\n";
             pulled_blocks.emplace_back(pool.popBlock());
-            std::cout << "Size of pool: " << pool.size() << "\n";
         }
+
+        EXPECT_EQ(pool.size(), 1);
 
         for (size_t i = 0; i < pulled_blocks.size(); i++) {
-            std::cout << "Pushing...\n";
             pool.pushBlock(pulled_blocks[i]);
-            std::cout << "Size of pool: " << pool.size() << "\n";
         }
+        EXPECT_EQ(pool.size(), 5);
     }
-
-    return 0;
 }

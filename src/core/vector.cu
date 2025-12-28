@@ -74,7 +74,10 @@ DataType* Vector<DataType>::release() {
 
 template <typename DataType>
 Vector<DataType>::~Vector() {
-    if (is_valid_) free();
+    try {
+        if (is_valid_) free();
+    } catch (const CudaError& e) {
+    }
 }
 
 template <typename DataType>
